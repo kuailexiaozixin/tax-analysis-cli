@@ -1,14 +1,15 @@
 # tax-analysis-cli
 
-`tax-analysis-skill` 的命令行项目。与引擎仓库分开存放，通过 `TAX_ENGINE_ROOT`
-或同级目录约定找到引擎的 `scripts/`，不复制任何税收判据。
+税务问题分析引擎的命令行项目。项目自带引擎的运行时快照（取数脚本、判据
+注册表与输出模板），不读取外部引擎目录；整个目录拷到哪里都能单独运行。
 
 ## 依赖与定位
 
 - Python ≥ 3.10；已验证 Python 3.13.14、Typer 0.27.2。
-- 默认查找顺序：环境变量 `TAX_ENGINE_ROOT` → 本项目及当前目录的祖先与同级
-  `tax-analysis-skill`。
-- 引擎自身的依赖：`requests`、`urllib3`（本项目的 `pyproject.toml` 已声明）。
+- 运行时依赖 `requests`、`urllib3`、`playwright`（`playwright` 只在税屋
+  WAF 挑战那条路用，浏览器本体取本机已装的 Edge/Chrome/Firefox）。
+- 运行时不查环境变量、不找同级目录：`engine.ENGINE_ROOT` 固定指向包内的
+  `runtime/`。
 
 ```bash
 cd tax-analysis-cli
@@ -22,19 +23,21 @@ python -m pip install -e .
 tax-analysis --help
 ```
 
-## 与引擎的边界
+## 运行时快照与独立性
 
-- 税收判据只有一份，在引擎里：税种词表、时效判定、算式骨架、输出模板、
-  各源取数脚本。本项目按 `TAX_ENGINE_ROOT` 或同级目录约定找到引擎 `scripts/`
-  之后 import，不复制这些判据。
-- 本项目自带两份副本：`tax_service.py`（服务契约层：参数边界、错误码、
-  结果形状）与 `tax_doc.py`（正文下载解析、官方解读检索）。引擎仓库里没有
-  这两个文件；CLI、API、MCP 各带一份，三份要求逐字节相同，由
+- 本包 `src/tax_engine_cli/runtime/` 是引擎的只读快照：24 个取数与判据脚本、
+  7 个判据注册表、2 份输出模板与风险框架。引导层只把这一个目录放进
+  `sys.path`，不 import 任何外部引擎包。
+- `runtime/MANIFEST.json` 记录快照对应的引擎版本与每个文件的 SHA-256；
+  `tests/test_cli.py::test_runtime_snapshot_matches_manifest` 逐文件核对，
+  缺文件或改一个字节都会报红。
+- 本项目另带两份实现：`tax_service.py`（服务契约层：参数边界、错误码、
+  结果形状）与 `tax_doc.py`（正文下载解析、官方解读检索）。CLI、API、MCP
+  各带一份，三份要求逐字节相同，由
   `tests/test_cli.py::test_vendored_copies_match_fingerprint` 用 SHA-256 钉住。
-- 副本不知道引擎在哪：引导层定位到引擎根后调用
-  `tax_service.configure(ENGINE_ROOT)` 注入，副本不再用 `__file__` 猜路径。
-- 对引擎目录只读：引导层设 `sys.dont_write_bytecode = True`，import 引擎脚本
-  不会往引擎的 `scripts/__pycache__` 落 .pyc。
+- 与引擎仓库没有运行时依赖：引擎升级后，本项目的行为不变，直到快照被重新
+  同步并更新清单。`test_no_external_engine_lookup` 禁止代码回退到环境变量
+  或同级目录查找。
 
 ## 命令面
 
@@ -58,11 +61,11 @@ tax-analysis --help
 示例：
 
 ```bash
-PYTHONPATH=src "$PY" -m tax_engine_cli classify "研发费用加计扣除比例是多少"
-PYTHONPATH=src "$PY" -m tax_engine_cli search "增值税" --source npc --size 5
-PYTHONPATH=src "$PY" -m tax_engine_cli calc run 从价计征 \
+PYTHONPATH=src python -m tax_engine_cli classify "研发费用加计扣除比例是多少"
+PYTHONPATH=src python -m tax_engine_cli search "增值税" --source npc --size 5
+PYTHONPATH=src python -m tax_engine_cli calc run 从价计征 \
   --params '{"计税依据": 100, "税率": 0.05}'
-PYTHONPATH=src "$PY" -m tax_engine_cli analyze answer "研发费用加计扣除比例是多少" \
+PYTHONPATH=src python -m tax_engine_cli analyze answer "研发费用加计扣除比例是多少" \
   --no-body --no-check-citations
 ```
 
@@ -85,7 +88,7 @@ PYTHONPATH=src "$PY" -m tax_engine_cli analyze answer "研发费用加计扣除�
 ## 测试
 
 ```bash
-PYTHONPATH=src "$PY" -m pytest -q
+PYTHONPATH=src python -m pytest -q
 ```
 
 用例只用离线路径或 monkeypatch 替换服务函数，不联网、不调用付费模型。
