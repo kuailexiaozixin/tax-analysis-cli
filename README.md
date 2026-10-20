@@ -1,26 +1,24 @@
 # tax-analysis-cli
 
-`tax-analysis-engine` 的命令行项目。与引擎仓库分开存放，通过 `TAX_ENGINE_ROOT`
+`tax-analysis-skill` 的命令行项目。与引擎仓库分开存放，通过 `TAX_ENGINE_ROOT`
 或同级目录约定找到引擎的 `scripts/`，不复制任何税收判据。
 
 ## 依赖与定位
 
-- Python ≥ 3.10；本机实测 Python 3.13.14、Typer 0.27.2。
+- Python ≥ 3.10；已验证 Python 3.13.14、Typer 0.27.2。
 - 默认查找顺序：环境变量 `TAX_ENGINE_ROOT` → 本项目及当前目录的祖先与同级
-  `tax-analysis-engine`。
+  `tax-analysis-skill`。
 - 引擎自身的依赖：`requests`、`urllib3`（本项目的 `pyproject.toml` 已声明）。
 
 ```bash
-unset PYTHONHOME
-PY="D:/Python/cpython-3.13.14-windows-x86_64-none/python.exe"
 cd tax-analysis-cli
-PYTHONPATH=src "$PY" -m tax_engine_cli --help
+PYTHONPATH=src python -m tax_engine_cli --help
 ```
 
 安装成命令行（可选）：
 
 ```bash
-"$PY" -m pip install -e .
+python -m pip install -e .
 tax-analysis --help
 ```
 
