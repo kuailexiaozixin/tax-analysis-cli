@@ -1,4 +1,4 @@
-"""tax-analysis-skill 的命令行入口。
+"""税务问题分析引擎的命令行入口。
 
 命令按引擎主线编号组织，不把脚本名直接暴露给用户：
   ① classify  ② coverage  ③④ search  ⑥ analyze  ⑧ law
