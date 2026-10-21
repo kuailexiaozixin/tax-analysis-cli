@@ -220,6 +220,50 @@ def _render_search(d: dict) -> str:
     return "\n".join(lines)
 
 
+def _render_gov_search(d: dict) -> str:
+    meta = d.get("meta") or {}
+    source = d.get("source") or meta.get("source") or ""
+    where = "税务法规库" if source == "fgk" else "税务总局"
+    lines = [
+        f"检索「{d.get('query', '')}」：{where} {d.get('total', 0)} 条命中"
+        f"（第 {d.get('page', 1)} 页，每页 {d.get('page_size', 0)}，"
+        f"{'还有下一页' if d.get('has_next') else '没有下一页'}）"
+    ]
+    filters = meta.get("filters") or {}
+    if filters:
+        lines.append("收窄维度：" + "｜".join(f"{k}={v}" for k, v in filters.items()))
+    if meta.get("total_hits") is not None:
+        lines.append(f"库内命中 {meta['total_hits']} 条，"
+                     f"本次取回 {len(d.get('items') or [])} 条")
+    if meta.get("pages_scanned") is not None:
+        lines.append(f"翻页扫描 {meta['pages_scanned']} 页"
+                     + ("（连续空页后提前收尾）" if meta.get("stopped_early") else ""))
+    if meta.get("filter_note"):
+        lines.append(f"筛选说明：{meta['filter_note']}")
+    errors = meta.get("errors") or {}
+    for source_name, why in errors.items():
+        lines.append(f"取数失败（失败不等于该源没有内容）：{source_name}：{why}")
+    for i, item in enumerate(d.get("items") or [], 1):
+        lines.append(f"{i:>2}. {item.get('title', '')}")
+        bits = []
+        date = item.get("publish_date") or item.get("date") or ""
+        if date:
+            bits.append(f"日期 {date}")
+        if item.get("document_number"):
+            bits.append(item["document_number"])
+        if item.get("issuing_authority") or item.get("publisher"):
+            bits.append(item.get("issuing_authority") or item.get("publisher"))
+        if bits:
+            lines.append("    " + "｜".join(bits))
+        if item.get("url"):
+            lines.append("    " + item["url"])
+        if item.get("body"):
+            lines.append("    正文：" + str(item["body"])[:80].replace("\n", " "))
+        if item.get("body_error"):
+            lines.append("    正文取数失败：" + item["body_error"])
+    return "\n".join(lines)
+
+
 def _render_law_info(d: dict) -> str:
     fields = [
         ("id", "ID"), ("title", "标题"), ("category", "类别"),
@@ -269,6 +313,21 @@ def _render_interpretations(d: dict) -> str:
             lines.append(f"    {item['url']}")
         if item.get("snippet"):
             lines.append(f"    {item['snippet'][:120]}")
+    return "\n".join(lines)
+
+
+def _render_related(d: dict) -> str:
+    lines = [f"《{d.get('law_title', '')}》相关网页：{d.get('total', 0)} 条"]
+    if d.get("engine_error"):
+        lines.append(f"全网那一路被拦截：{d['engine_error']}"
+                     "（清单不是「网上没有解读」）")
+    for i, item in enumerate(d.get("sources") or [], 1):
+        lines.append(f"{i:>2}. [{item.get('source_label') or item.get('source', '')}]"
+                     f" {item.get('title', '')}")
+        if item.get("date"):
+            lines.append(f"    日期 {item['date']}")
+        if item.get("url"):
+            lines.append(f"    {item['url']}")
     return "\n".join(lines)
 
 
@@ -457,6 +516,43 @@ def search(
     )
 
 
+@app.command("search-gov")
+def search_gov(
+    query: Annotated[str, typer.Argument(help="检索词")],
+    source: Annotated[str, typer.Option("--source", "-s",
+                                        help="chinatax（税务总局站内）或 fgk（税务法规库）")] = "chinatax",
+    size: Annotated[int, typer.Option("--size", help="取回条数 1–50")] = 10,
+    page: Annotated[int, typer.Option("--page", help="页码；只有 chinatax 有这一维")] = 1,
+    scope: Annotated[str, typer.Option("--scope", help="title 或 fulltext")] = "title",
+    exact: Annotated[bool, typer.Option("--exact", help="精准分词")] = False,
+    sort: Annotated[str, typer.Option("--sort", help="relevance 或 date")] = "relevance",
+    date_from: Annotated[str, typer.Option("--date-from", help="成文日期起 YYYY-MM-DD")] = "",
+    date_to: Annotated[str, typer.Option("--date-to", help="成文日期止 YYYY-MM-DD")] = "",
+    aging: Annotated[str, typer.Option("--aging", help="全文有效／已修改／全文失效／全文废止／尚未生效")] = "",
+    body: Annotated[bool, typer.Option("--body/--no-body", help="是否取法规库正文（只对 fgk）")] = False,
+    file_only: Annotated[bool, typer.Option("--file-only/--all-labels",
+                                            help="只查文件类标签，还是连新闻/视频一起查")] = True,
+    tax_type: Annotated[str, typer.Option("--tax-type", help="税种分面，如 增值税")] = "",
+    doc_type: Annotated[str, typer.Option("--doc-type", help="文种，如 财政部税务总局公告")] = "",
+    doc_year: Annotated[str, typer.Option("--doc-year", help="发文字号年份，四位")] = "",
+    doc_no: Annotated[str, typer.Option("--doc-no", help="发文字号数字，1–5 位")] = "",
+    effect_level: Annotated[str, typer.Option("--effect-level", help="效力等级")] = "",
+    as_json: Annotated[bool, _JSON_OPTION] = False,
+):
+    """税务总局站内／法规库单源检索，可叠加时效、文种、文号等收窄维度。"""
+    _run(
+        lambda: svc.search_gov(
+            query, source=source, size=size, page=page, scope=scope,
+            exact=exact, sort=sort, date_from=date_from, date_to=date_to,
+            aging=aging, body=body, file_only=file_only, tax_type=tax_type,
+            doc_type=doc_type, doc_year=doc_year, doc_no=doc_no,
+            effect_level=effect_level,
+        ),
+        as_json,
+        _render_gov_search,
+    )
+
+
 # ── ⑧ 法规 ─────────────────────────────────────────────────────────────────
 
 @law_app.command("info")
@@ -492,6 +588,17 @@ def law_interpretations(
         as_json,
         _render_interpretations,
     )
+
+
+@law_app.command("related")
+def law_related(
+    law_id: Annotated[str, typer.Argument(help="法规 ID（NPC bbbs）")],
+    keyword: Annotated[str, typer.Option("--keyword", "-k", help="补充检索词")] = "",
+    as_json: Annotated[bool, _JSON_OPTION] = False,
+):
+    """税屋、公众号与 360 全网的相关解读，与网页「相关网页」同一份组合。"""
+    _run(lambda: svc.web_related(law_id, keyword=keyword),
+         as_json, _render_related)
 
 
 # ── ⑥ 分析 ─────────────────────────────────────────────────────────────────
@@ -532,12 +639,14 @@ def analyze_answer(
     body: Annotated[bool, typer.Option("--body/--no-body", help="是否取税屋正文")] = True,
     citations: Annotated[bool, typer.Option("--check-citations/--no-check-citations",
                                            help="是否回官方库核对文号")] = True,
+    max_per_round: Annotated[int | None, typer.Option("--max-per-round", help="每轮每源最多几条")] = None,
     as_json: Annotated[bool, _JSON_OPTION] = False,
 ):
     """一次跑完检索与分层，回结构化底稿；不写最终答案。"""
     _run(
         lambda: svc.analyze_answer(question, at=at, read_body=body,
-                                   check_citations=citations),
+                                   check_citations=citations,
+                                   max_per_round=max_per_round),
         as_json,
         _render_answer,
     )
@@ -625,6 +734,13 @@ def check_inspect(
         as_json,
         engine.tax_inspect.render,
     )
+
+
+@check_app.command("intake-blank")
+def check_intake_blank(as_json: Annotated[bool, _JSON_OPTION] = False):
+    """空白受理表；改完可直接喂给 check intake。"""
+    _run(svc.intake_blank, as_json,
+         lambda d: json.dumps(d, ensure_ascii=False, indent=2))
 
 
 @check_app.command("intake")

@@ -98,6 +98,71 @@ def test_multi_source_page_two_is_rejected_without_network():
     assert "page_not_supported" in result.output
 
 
+def test_search_gov_forwards_filters_and_renders_notes(monkeypatch):
+    captured = {}
+
+    def fake_gov(query, **kwargs):
+        captured.update(kwargs)
+        return {
+            "query": query, "source": kwargs["source"], "page": 2,
+            "page_size": 10, "total": 25, "has_next": True,
+            "items": [{"title": "测试文件", "document_number": "公告2026年第1号",
+                       "publish_date": "2026-01-01", "url": "https://example.gov.cn/x"}],
+            "meta": {"source": kwargs["source"], "filters": {"xxgkAging": "全文有效"},
+                     "total_hits": 99, "pages_scanned": 4, "stopped_early": True,
+                     "filter_note": "维度拼窄的说明", "errors": {}},
+        }
+
+    monkeypatch.setattr(engine.tax_service, "search_gov", fake_gov)
+    result = invoke(
+        "search-gov", "增值税", "--source", "chinatax", "--page", "2",
+        "--aging", "全文有效", "--date-from", "2026-01-01", "--sort", "date",
+        "--tax-type", "增值税",
+    )
+    assert result.exit_code == 0, result.output
+    assert captured["aging"] == "全文有效"
+    assert captured["date_from"] == "2026-01-01"
+    assert captured["sort"] == "date"
+    assert captured["tax_type"] == "增值税"
+    assert "税务总局 25 条命中" in result.output
+    assert "库内命中 99 条" in result.output
+    assert "维度拼窄的说明" in result.output
+    assert "公告2026年第1号" in result.output
+
+
+def test_search_gov_rejects_fgk_page_before_network():
+    result = invoke("search-gov", "增值税", "--source", "fgk",
+                    "--page", "2", "--json")
+    assert result.exit_code == 2
+    body = output_json(result)
+    assert body["error"]["code"] == "page_not_supported"
+
+
+def test_search_gov_rejects_body_on_chinatax_before_network():
+    result = invoke("search-gov", "增值税", "--source", "chinatax",
+                    "--body", "--json")
+    assert result.exit_code == 2
+    body = output_json(result)
+    assert body["error"]["code"] == "invalid_parameter"
+
+
+def test_analyze_answer_forwards_max_per_round(monkeypatch):
+    captured = {}
+
+    def fake_answer(question, **kwargs):
+        captured.update(kwargs)
+        return {"question": question, "type": {"label": "政策查询", "type": "lookup"},
+                "primary": {}, "supporting": [], "practice": [], "to_verify": [],
+                "repealed": [], "pending": [], "conditions": [],
+                "counts": {"total": 0}}
+
+    monkeypatch.setattr(engine.tax_service, "analyze_answer", fake_answer)
+    result = invoke("analyze", "answer", "研发费用加计扣除比例是多少",
+                    "--max-per-round", "2")
+    assert result.exit_code == 0, result.output
+    assert captured["max_per_round"] == 2
+
+
 def test_law_text_patched(monkeypatch):
     monkeypatch.setattr(
         engine.tax_service, "law_text",
@@ -108,6 +173,53 @@ def test_law_text_patched(monkeypatch):
     assert result.exit_code == 0, result.output
     assert "第一条" in result.output
     assert "2 段" in result.output
+
+
+def test_law_info_forwards_the_id(monkeypatch):
+    captured = {}
+
+    def fake_info(law_id):
+        captured["law_id"] = law_id
+        return {"id": law_id, "title": "中华人民共和国增值税法",
+                "status": "现行有效"}
+
+    monkeypatch.setattr(engine.tax_service, "law_info", fake_info)
+    result = invoke("law", "info", "abc")
+    assert result.exit_code == 0, result.output
+    assert captured["law_id"] == "abc"
+    assert "增值税法" in result.output
+
+
+def test_law_related_forwards_keyword(monkeypatch):
+    captured = {}
+
+    def fake_related(law_id, keyword=""):
+        captured.update(law_id=law_id, keyword=keyword)
+        return {"law_id": law_id, "law_title": "增值税法", "keyword": keyword,
+                "total": 1,
+                "sources": [{"title": "解读A", "url": "https://a.test/1",
+                             "source_label": "税屋"}]}
+
+    monkeypatch.setattr(engine.tax_service, "web_related", fake_related)
+    result = invoke("law", "related", "abc", "--keyword", "税率")
+    assert result.exit_code == 0, result.output
+    assert captured == {"law_id": "abc", "keyword": "税率"}
+    assert "解读A" in result.output
+    assert "相关网页：1 条" in result.output
+
+
+def test_intake_blank_round_trips_through_intake(tmp_path):
+    blank = invoke("check", "intake-blank")
+    assert blank.exit_code == 0, blank.output
+    doc = output_json(blank)
+    assert [c["代号"] for c in doc["合同"]] == ["CT-1"]
+    doc["合同"][0]["名称"] = "采购合同"
+    path = tmp_path / "document.json"
+    path.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+
+    result = invoke("check", "intake", str(path))
+    assert result.exit_code == 0, result.output
+    assert "缺 9" in result.output
 
 
 def test_templates_show_and_unknown_key():
@@ -248,7 +360,7 @@ def test_vendored_copies_match_fingerprint():
     import hashlib
 
     pins = {
-        "tax_service": "5c68bda0a1fcff0ebcfb996528f4c79cd58cdc72d358e73857f489250bb63ff7",
+        "tax_service": "aa156a7db79d44a706c4fba9561b27ba7e71fedcfadd717976b54bdf5cb0fde9",
         "tax_doc": "4ae92d52346fddb1b660b85836a7d8d7cadde5961025369535d262519cff35a0",
     }
     got = {

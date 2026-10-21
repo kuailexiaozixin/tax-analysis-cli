@@ -25,7 +25,7 @@ tax-analysis --help
 
 ## 运行时快照与独立性
 
-- 本包 `src/tax_engine_cli/runtime/` 是引擎的只读快照：24 个取数与判据脚本、
+- 本包 `src/tax_engine_cli/runtime/` 是引擎的只读快照：25 个取数与判据脚本、
   7 个判据注册表、2 份输出模板与风险框架。引导层只把这一个目录放进
   `sys.path`，不 import 任何外部引擎包。
 - `runtime/MANIFEST.json` 记录快照对应的引擎版本与每个文件的 SHA-256；
@@ -48,11 +48,12 @@ tax-analysis --help
 | ① | `classify` | 判型、前提缺口、探针 |
 | ② | `coverage` | 依据覆盖率；`--evidence` 不传是「没检」，传 `[]` 是「检了没有」 |
 | ③④ | `search` | 六源聚合；只有 `--source npc` 单源支持 `--page` |
-| ⑧ | `law info` / `law text` / `law interpretations` | 元数据、正文、官方解读 |
+| ③④ | `search-gov` | 税务总局站内／法规库单源检索；可叠加时效、成文日期、文种、文号等收窄维度 |
+| ⑧ | `law info` / `law text` / `law interpretations` / `law related` | 元数据、正文、官方解读、税屋／公众号／全网相关网页 |
 | ⑥ | `analyze plan` / `gather` / `answer` | 计划、取数定级、结构化底稿 |
 | — | `calc list` / `calc run` | 参数化算式 |
 | — | `cases` | 类案台账 |
-| — | `check ledger\|inspect\|intake\|reconcile\|control` | 账套巡检、稽查模拟、合同受理与对账、内控生成 |
+| — | `check ledger\|inspect\|intake\|intake-blank\|reconcile\|control` | 账套巡检、稽查模拟、合同受理（含取空白表）与对账、内控生成 |
 | — | `templates list\|show` | 输出模板 |
 
 所有命令支持 `--json` 输出完整结构化结果。复杂命令的人读形态直接复用引擎
@@ -63,10 +64,14 @@ tax-analysis --help
 ```bash
 PYTHONPATH=src python -m tax_engine_cli classify "研发费用加计扣除比例是多少"
 PYTHONPATH=src python -m tax_engine_cli search "增值税" --source npc --size 5
+PYTHONPATH=src python -m tax_engine_cli search-gov "研发费用加计扣除" \
+  --source fgk --aging 全文有效 --doc-type 财政部税务总局公告 --size 5
 PYTHONPATH=src python -m tax_engine_cli calc run 从价计征 \
   --params '{"计税依据": 100, "税率": 0.05}'
 PYTHONPATH=src python -m tax_engine_cli analyze answer "研发费用加计扣除比例是多少" \
-  --no-body --no-check-citations
+  --no-body --no-check-citations --max-per-round 3
+PYTHONPATH=src python -m tax_engine_cli law related <bbbs_id> --keyword 税率
+PYTHONPATH=src python -m tax_engine_cli check intake-blank --json > document.json
 ```
 
 `--evidence`、`--params`、`--diagnosis` 一类 JSON 参数既接受内联 JSON，也接受
@@ -99,4 +104,6 @@ PYTHONPATH=src python -m pytest -q
 - `analyze`、`search`、`law`、`cases` 会访问外部站点；失败会按错误码返回，
   不会把「取数失败」打印成「0 条」。
 - 多源聚合没有页码维度，`--page > 1` 直接报错；需要翻页请限定 `--source npc`。
+- `search-gov` 的 `fgk` 那一路没有页码，`--page > 1` 直接报错；`--body` 只对
+  `fgk` 有效，`--aging` 等 search5 维度只对 `chinatax` 与 `fgk` 生效。
 - CLI 是单进程同步工具，不负责并发与重试；重试策略仍归引擎取数层。
