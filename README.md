@@ -1,109 +1,133 @@
 # tax-analysis-cli
 
-税务问题分析引擎的命令行项目。项目自带引擎的运行时快照（取数脚本、判据
-注册表与输出模板），不读取外部引擎目录；整个目录拷到哪里都能单独运行。
+在终端里完成税务问题分析：判断题型与前提缺口、核对依据覆盖、检索法规、
+读原文并核对时效与效力，最后按模板产出结构化底稿；账套巡检、稽查模拟、
+合同受理与内控生成也在同一套命令里。
 
-## 依赖与定位
+适合税务顾问、会计和分析人员把分析过程写进脚本、批处理或本地留档。包内
+自带引擎快照，不依赖同级目录或其他项目；人读结果直接打印，加 `--json`
+给程序消费。
 
-- Python ≥ 3.10；已验证 Python 3.13.14、Typer 0.27.2。
-- 运行时依赖 `requests`、`urllib3`、`playwright`（`playwright` 只在税屋
-  WAF 挑战那条路用，浏览器本体取本机已装的 Edge/Chrome/Firefox）。
-- 运行时不查环境变量、不找同级目录：`engine.ENGINE_ROOT` 固定指向包内的
-  `runtime/`。
+## 快速开始
 
 ```bash
 cd tax-analysis-cli
-PYTHONPATH=src python -m tax_engine_cli --help
-```
-
-安装成命令行（可选）：
-
-```bash
 python -m pip install -e .
-tax-analysis --help
+tax-analysis health
+tax-analysis classify "研发费用加计扣除比例是多少"
 ```
 
-## 运行时快照与独立性
+`health` 输出引擎位置与规模：
 
-- 本包 `src/tax_engine_cli/runtime/` 是引擎的只读快照：25 个取数与判据脚本、
-  7 个判据注册表、2 份输出模板与风险框架。引导层只把这一个目录放进
-  `sys.path`，不 import 任何外部引擎包。
-- `runtime/MANIFEST.json` 记录快照对应的引擎版本与每个文件的 SHA-256；
-  `tests/test_cli.py::test_runtime_snapshot_matches_manifest` 逐文件核对，
-  缺文件或改一个字节都会报红。
-- 本项目另带两份实现：`tax_service.py`（服务契约层：参数边界、错误码、
-  结果形状）与 `tax_doc.py`（正文下载解析、官方解读检索）。CLI、API、MCP
-  各带一份，三份要求逐字节相同，由
-  `tests/test_cli.py::test_vendored_copies_match_fingerprint` 用 SHA-256 钉住。
-- 与引擎仓库没有运行时依赖：引擎升级后，本项目的行为不变，直到快照被重新
-  同步并更新清单。`test_no_external_engine_lookup` 禁止代码回退到环境变量
-  或同级目录查找。
+```text
+引擎：<已安装包>/runtime
+税种/专题：33 条｜算式骨架：6 条｜输出模板：11 个
+检查时间：<运行时时间>
+```
 
-## 命令面
+输出里的「引擎」就是 `engine_root`，指向包内自带的 `runtime/`，不是外部
+目录；加 `--json` 可以看到 `"status": "ok"` 和完整字段。
 
-| 主线 | 命令 | 说明 |
+`classify` 输出（节选）：
+
+```text
+题型：政策查询（lookup，把握 0.85）
+判型依据：命中 2 个该类信号词
+题面未交代：time、entity、place、scale
+建议先问：
+  · 时点：这笔业务发生在什么时间？涉及哪个纳税年度？
+这类题要答到位，需要：对应的现行有效法条或文件
+结论应包含：结论 + 效力位阶 + 文号 + 生效时点
+```
+
+`tax-analysis` 不在 `PATH` 时，用 `python -m tax_engine_cli ...` 运行；未安装
+时在仓库根目录先设 `PYTHONPATH=src`（PowerShell：`$env:PYTHONPATH='src'`）。
+
+Windows 的 Git Bash 等终端若中文显示乱码，设 `PYTHONUTF8=1` 再运行
+（PowerShell：`$env:PYTHONUTF8='1'`）；`--json` 输出同样受此影响。
+
+## 环境
+
+- Python ≥ 3.10；依赖见 `pyproject.toml`。
+- `playwright` 只在税屋 WAF 挑战那条路用，浏览器取系统已安装的
+  Edge/Chrome/Firefox。
+
+## 能做什么
+
+| 任务 | 命令 | 得到什么 |
 |---|---|---|
-| — | `health` | 离线健康检查 |
-| — | `tax-types` | 33 个税种/专题词表 |
-| ① | `classify` | 判型、前提缺口、探针 |
-| ② | `coverage` | 依据覆盖率；`--evidence` 不传是「没检」，传 `[]` 是「检了没有」 |
-| ③④ | `search` | 六源聚合；只有 `--source npc` 单源支持 `--page` |
-| ③④ | `search-gov` | 税务总局站内／法规库单源检索；可叠加时效、成文日期、文种、文号等收窄维度 |
-| ⑧ | `law info` / `law text` / `law interpretations` / `law related` | 元数据、正文、官方解读、税屋／公众号／全网相关网页 |
-| ⑥ | `analyze plan` / `gather` / `answer` | 计划、取数定级、结构化底稿 |
-| — | `calc list` / `calc run` | 参数化算式 |
-| — | `cases` | 类案台账 |
-| — | `check ledger\|inspect\|intake\|intake-blank\|reconcile\|control` | 账套巡检、稽查模拟、合同受理（含取空白表）与对账、内控生成 |
-| — | `templates list\|show` | 输出模板 |
+| 判型 | `classify` | 题型、把握度、题面缺口与建议追问（离线） |
+| 依据覆盖 | `coverage` | 必备依据逐项状态与覆盖率；区分「没检」与「检了没有」 |
+| 检索 | `search`、`search-gov` | 六源聚合；或只查税务总局站内／法规库，并叠加时效、文种、文号等条件 |
+| 读法规 | `law info`、`law text`、`law interpretations`、`law related` | 元数据、正文段落、官方解读、税屋／公众号／全网实务线索 |
+| 分析 | `analyze plan`、`analyze gather`、`analyze answer` | 检索计划；逐轮取数与定级；一次跑完的结构化底稿（不写最终答复） |
+| 算式 | `calc list`、`calc run` | 算式骨架与参数化展开；缺参数、多余参数都会报出 |
+| 类案 | `cases` | 税务总局查处通报与曝光典型的台账 |
+| 检查件 | `check` 下的 `ledger`、`inspect`、`intake`、`intake-blank`、`reconcile`、`control` | 账套巡检、稽查问询、多合同受理、条款对账、九要素内控制度 |
+| 词表与模板 | `health`、`tax-types`、`templates` | 引擎状态、33 个税种/专题、输出模板原文 |
 
-所有命令支持 `--json` 输出完整结构化结果。复杂命令的人读形态直接复用引擎
-已有的 `render()`，不在适配器里重写一套口径。
+`search`、`search-gov`、`law`、`cases` 与 `analyze gather` / `analyze answer`
+需要联网；其余命令离线可用。
 
-示例：
+## 常用示例
 
 ```bash
-PYTHONPATH=src python -m tax_engine_cli classify "研发费用加计扣除比例是多少"
-PYTHONPATH=src python -m tax_engine_cli search "增值税" --source npc --size 5
-PYTHONPATH=src python -m tax_engine_cli search-gov "研发费用加计扣除" \
-  --source fgk --aging 全文有效 --doc-type 财政部税务总局公告 --size 5
-PYTHONPATH=src python -m tax_engine_cli calc run 从价计征 \
-  --params '{"计税依据": 100, "税率": 0.05}'
-PYTHONPATH=src python -m tax_engine_cli analyze answer "研发费用加计扣除比例是多少" \
+# 单源检索并翻页
+tax-analysis search "增值税" --source npc --page 2 --size 5
+
+# 税务总局法规库，按文种收窄
+tax-analysis search-gov "研发费用加计扣除" --source fgk \
+  --doc-type 财政部税务总局公告 --size 5
+
+# 公式展开
+tax-analysis calc run 从价计征 --params '{"计税依据": 100, "税率": 0.05}'
+
+# 整题分析：只取数定级，不抓正文、不核引用
+tax-analysis analyze answer "研发费用加计扣除比例是多少" \
   --no-body --no-check-citations --max-per-round 3
-PYTHONPATH=src python -m tax_engine_cli law related <bbbs_id> --keyword 税率
-PYTHONPATH=src python -m tax_engine_cli check intake-blank --json > document.json
+
+# 取空白受理表，填好合同名称后交回
+tax-analysis check intake-blank --json > document.json
 ```
 
-`--evidence`、`--params`、`--diagnosis` 一类 JSON 参数既接受内联 JSON，也接受
-`@文件路径`；`check` 的账套/合同参数直接收文件路径。
+`--evidence`、`--params` 一类 JSON 参数既收内联 JSON，也收 `@文件路径`；
+`check` 的账套/合同参数与 `--diagnosis` 直接收文件路径。
 
-## 退出码
+## 输出与退出码
+
+所有命令都支持 `--json`，返回完整结构化结果；不加时打印人读文本。
 
 | 退出码 | 含义 |
 |---|---|
 | 0 | 成功 |
-| 1 | 适配器内部错误 |
+| 1 | 程序内部错误 |
 | 2 | 参数不合法、缺参数、多源翻页等请求错误 |
 | 3 | 法规或模板不存在 |
 | 4 | 上游取数失败 |
+| 130 | 用户中断（Ctrl-C） |
 
 错误默认写 stderr；加 `--json` 时输出
-`{"error":{"code","message","details"}}`，与 API/MCP 的语义一致。
+`{"error":{"code","message","details"}}`，与 API、MCP 的语义一致。
 
-## 测试
+## 限制
+
+- 只产出结构化底稿，不写最终答复，也不调用付费模型。
+- 多源聚合没有页码维度，`--page > 1` 直接报错；需要翻页时限定
+  `--source npc`。
+- `search-gov` 的法规库那一路没有页码，`--page > 1` 报错；`--body` 只对
+  法规库有效。
+- 取数失败按错误码返回，不会打印成「0 条」。
+- 单进程同步工具，不负责并发；重试在取数层完成。
+
+## 独立运行与测试
+
+包内 `src/tax_engine_cli/runtime/` 是取数脚本、判据注册表与输出模板的只读
+快照，`MANIFEST.json` 记录每个文件的 SHA-256；运行时不查环境变量，也不找
+同级目录。
 
 ```bash
-PYTHONPATH=src python -m pytest -q
+python -m pip install -e ".[test]"
+python -m pytest -q
 ```
 
-用例只用离线路径或 monkeypatch 替换服务函数，不联网、不调用付费模型。
-
-## 边界
-
-- 不提供付费模型解读（引擎的 `/api/ai-interpret` 那条路没有暴露）。
-- `analyze`、`search`、`law`、`cases` 会访问外部站点；失败会按错误码返回，
-  不会把「取数失败」打印成「0 条」。
-- 多源聚合没有页码维度，`--page > 1` 直接报错；需要翻页请限定 `--source npc`。
-- `search-gov` 的 `fgk` 那一路没有页码，`--page > 1` 直接报错；`--body` 只对
-  `fgk` 有效，`--aging` 等 search5 维度只对 `chinatax` 与 `fgk` 生效。
-- CLI 是单进程同步工具，不负责并发与重试；重试策略仍归引擎取数层。
+测试只用离线路径或替换服务函数，不联网。
