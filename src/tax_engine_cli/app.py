@@ -596,7 +596,7 @@ def law_related(
     keyword: Annotated[str, typer.Option("--keyword", "-k", help="补充检索词")] = "",
     as_json: Annotated[bool, _JSON_OPTION] = False,
 ):
-    """税屋、公众号与 360 全网的相关解读，与网页「相关网页」同一份组合。"""
+    """税屋、公众号与搜狗全网的相关解读，与网页「相关网页」同一份组合。"""
     _run(lambda: svc.web_related(law_id, keyword=keyword),
          as_json, _render_related)
 

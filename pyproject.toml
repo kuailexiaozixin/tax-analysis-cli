@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tax-analysis-cli"
-version = "0.2.2"
+version = "0.2.4"
 description = "在终端完成税务问题分析：判型、依据覆盖、法规检索与阅读、分层底稿、账套与合同检查。"
 readme = "README.md"
 requires-python = ">=3.10"
