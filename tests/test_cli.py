@@ -266,6 +266,54 @@ def test_cases_reject_unknown_order_before_network():
     assert "date_desc" in body["error"]["details"]["allowed"]
 
 
+def test_paper_date_branch_forwards_edition(monkeypatch):
+    captured = {}
+
+    def fake_paper(**kwargs):
+        captured.update(kwargs)
+        return {"date": "2026-11-24", "articles": [], "_status": ""}
+
+    monkeypatch.setattr(engine.tax_service, "paper", fake_paper)
+    result = invoke("paper", "--date", "2026-11-24", "--edition", "3", "--json")
+    assert result.exit_code == 0, result.output
+    assert captured["date"] == "2026-11-24"
+    assert captured["edition"] == 3
+
+
+def test_paper_keyword_branch_forwards_editions(monkeypatch):
+    captured = {}
+
+    def fake_paper(**kwargs):
+        captured.update(kwargs)
+        return {"results": [], "total": None, "_status": ""}
+
+    monkeypatch.setattr(engine.tax_service, "paper", fake_paper)
+    result = invoke("paper", "虚开", "--editions", "5", "--editions", "6",
+                    "--days", "7", "--json")
+    assert result.exit_code == 0, result.output
+    assert captured["keyword"] == "虚开"
+    assert captured["editions"] == [5, 6]
+    assert captured["days"] == 7
+
+
+def test_paper_requires_one_branch_before_network():
+    result = invoke("paper", "--json")
+    assert result.exit_code == 2
+    assert output_json(result)["error"]["code"] == "invalid_parameter"
+
+
+def test_paper_render_says_no_hit_is_not_absence(monkeypatch):
+    monkeypatch.setattr(
+        engine.tax_service, "paper",
+        lambda **k: {"results": [], "total": None, "_status": "",
+                     "_days_scanned": 3, "_no_issue_days": ["2026-11-22"],
+                     "_failed_days": ["2026-11-21"], "_editions": [6]})
+    result = invoke("paper", "虚开")
+    assert result.exit_code == 0, result.output
+    assert "没命中" in result.output or "不等于" in result.output
+    assert "2026-11-21" in result.output      # 失败的日子要单独报出来
+
+
 def test_analyze_answer_patched(monkeypatch):
     monkeypatch.setattr(
         engine.tax_service, "analyze_answer",
@@ -329,7 +377,7 @@ def test_runtime_snapshot_matches_manifest():
                         (project / "pyproject.toml").read_text(encoding="utf-8"), re.M)[1]
     assert sys.modules[engine.__package__].__version__ == version
     manifest = json.loads((runtime / "MANIFEST.json").read_text(encoding="utf-8"))
-    assert manifest["engine_version"] == "3.62.22"
+    assert manifest["engine_version"] == "3.62.23"
     listed = manifest["files"]
     actual = {
         path.relative_to(runtime).as_posix()
@@ -565,7 +613,7 @@ def test_vendored_copies_match_fingerprint():
     import hashlib
 
     pins = {
-        "tax_service": "adf63b15c32df4637d6fe730835e1eb4524e28afe8484c95111557d33a531b42",
+        "tax_service": "cc01b7ed8e43ff585ab964f24dce05255e18815b6d8451802acb420edfd97231",
         "tax_doc": "15877a54afaa05f1ac45fb757e2131a1766776e642dd57d24de2636f07f6f608",
     }
     got = {

@@ -694,6 +694,34 @@ def cases(
     )
 
 
+# ── 数字报 ─────────────────────────────────────────────────────────────────
+
+@app.command()
+def paper(
+    keyword: Annotated[str, typer.Argument(help="关键词（与 --date 二选一）")] = "",
+    date: Annotated[str, typer.Option("--date", help="版面日期 YYYY-MM-DD，取一天一版")] = "",
+    edition: Annotated[int, typer.Option("--edition", help="版面号 1–8")] = 6,
+    editions: Annotated[list[int] | None, typer.Option("--editions", help="关键词那一路要扫的版面，可重复（不给用 --edition 那一枚）")] = None,
+    days: Annotated[int, typer.Option("--days", help="关键词回溯天数 1–30")] = 10,
+    size: Annotated[int, typer.Option("--size", help="最多几条 1–30")] = 6,
+    date_from: Annotated[str, typer.Option("--date-from", help="起日 YYYY-MM-DD（含）")] = "",
+    date_to: Annotated[str, typer.Option("--date-to", help="止日 YYYY-MM-DD（含）")] = "",
+    as_json: Annotated[bool, _JSON_OPTION] = False,
+):
+    """中国税务报·网络报（数字报）：--date 看一天一版，给关键词则扫近 N 天版面。
+
+    这一源不参与多源聚合：同一篇稿在本报与中国税网常用两副标题（全题／半题），
+    按标题去重会把两条不同地址的稿子错并成一条。
+    """
+    _run(
+        lambda: svc.paper(keyword=keyword, date=date, edition=edition,
+                          editions=editions, days=days, size=size,
+                          date_from=date_from, date_to=date_to),
+        as_json,
+        engine.tax_paper.render,
+    )
+
+
 # ── 检查类 ─────────────────────────────────────────────────────────────────
 
 @check_app.command("ledger")

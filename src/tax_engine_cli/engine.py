@@ -23,6 +23,7 @@ import tax_control  # noqa: E402
 import tax_inspect  # noqa: E402
 import tax_intake  # noqa: E402
 import tax_ledger  # noqa: E402
+import tax_paper  # noqa: E402
 
 from . import tax_service  # noqa: E402
 
